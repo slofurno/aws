@@ -1,11 +1,10 @@
 package main
 
 import (
-	"bytes"
+	"bufio"
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 
@@ -77,15 +76,12 @@ func s3Copy(srcPath, dstPath string) {
 		}
 	}
 
-	b, err := ioutil.ReadAll(src)
-	if err != nil {
-		panic(err)
-	}
-
-	reader := bytes.NewReader(b)
-
 	if isS3Path(dstPath) {
 		bucket, key := parseS3Path(dstPath)
+		reader, ok := src.(io.ReadSeeker)
+		if !ok {
+			panic("cannot cp s3 -> s3")
+		}
 		/*
 			svc := s3manager.NewUploader(cfg)
 			_, err := svc.Upload(&s3manager.UploadInput{
@@ -103,19 +99,46 @@ func s3Copy(srcPath, dstPath string) {
 			panic(err)
 		}
 	} else if dstPath == "-" {
-		if _, err := io.Copy(os.Stdout, reader); err != nil {
+		if _, err := io.Copy(os.Stdout, src); err != nil {
 			panic(err)
 		}
 	} else {
+		if dstPath == "." {
+			parts := strings.Split(srcPath, "/")
+			dstPath = parts[len(parts)-1]
+		}
+
 		writer, err := os.Create(dstPath)
 		if err != nil {
 			panic(err)
 		}
 
-		if _, err := io.Copy(writer, reader); err != nil {
+		if _, err := io.Copy(writer, src); err != nil {
 			panic(err)
 		}
 	}
+}
+
+func do(rc io.ReadCloser, f *os.File) {
+	writer := bufio.NewWriter(f)
+	buf := make([]byte, 4096>>2)
+	for {
+		nr, err := rc.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			panic(err)
+		}
+
+		_, err = writer.Write(buf[0:nr])
+		if err != nil {
+			panic(err)
+		}
+	}
+	rc.Close()
+	writer.Flush()
+	f.Close()
 }
 
 func getEcrLogin() {
