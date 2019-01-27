@@ -14,6 +14,30 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
+func getOpt(opt string, args []string) ([]string, bool) {
+	v1 := "--" + opt
+	v2 := v1 + "="
+
+	for i, arg := range args {
+		if strings.HasPrefix(arg, v2) {
+			return strings.Split(arg[len(v2):], " "), true
+		}
+
+		if strings.HasPrefix(arg, v1) {
+			var vals []string
+			for j := i + 1; j < len(args); j++ {
+				if strings.HasPrefix(args[j], "--") {
+					break
+				}
+				vals = append(vals, args[j])
+			}
+			return vals, true
+		}
+	}
+
+	return nil, false
+}
+
 func main() {
 	args := os.Args[1:]
 	if len(args) < 1 {
@@ -33,7 +57,21 @@ func main() {
 		if len(args) < 2 || args[1] != "get-login" {
 			panic("ecr get-login")
 		}
-		getEcrLogin()
+
+		var region string
+		var registry []string
+
+		if len(args) > 2 {
+			if v, ok := getOpt("region", args[2:]); ok && len(v) == 1 {
+				region = v[0]
+			}
+
+			if v, ok := getOpt("registry-ids", args[2:]); ok {
+				registry = v
+			}
+		}
+
+		getEcrLogin(region, registry)
 	}
 }
 
@@ -141,29 +179,40 @@ func do(rc io.ReadCloser, f *os.File) {
 	f.Close()
 }
 
-func getEcrLogin() {
-	cfg, err := external.LoadDefaultAWSConfig()
+func getEcrLogin(region string, registry []string) {
+	cfg, err := external.LoadDefaultAWSConfig(&aws.Config{
+		Region: region,
+	})
+
 	if err != nil {
 		panic("unable to load SDK config, " + err.Error())
 	}
 
+	if region != "" {
+		cfg.Region = region
+	}
+
 	client := ecr.New(cfg)
-	out, err := client.GetAuthorizationTokenRequest(&ecr.GetAuthorizationTokenInput{}).Send()
+	out, err := client.GetAuthorizationTokenRequest(&ecr.GetAuthorizationTokenInput{
+		RegistryIds: registry,
+	}).Send()
 	if err != nil {
 		panic(err)
 	}
 
-	endpoint := aws.StringValue(out.AuthorizationData[0].ProxyEndpoint)
-	token := aws.StringValue(out.AuthorizationData[0].AuthorizationToken)
-	decoded, err := base64.StdEncoding.DecodeString(token)
-	if err != nil {
-		panic(err)
+	for i := range out.AuthorizationData {
+		endpoint := aws.StringValue(out.AuthorizationData[i].ProxyEndpoint)
+		token := aws.StringValue(out.AuthorizationData[i].AuthorizationToken)
+		decoded, err := base64.StdEncoding.DecodeString(token)
+		if err != nil {
+			panic(err)
+		}
+
+		split := strings.Split(string(decoded), ":")
+		password := split[1]
+		user := split[0]
+
+		//"docker login -u AWS -p xxx -e none https://142221083342.dkr.ecr.us-east-1.amazonaws.com"
+		fmt.Printf("docker login -u %s -p %s %s\n", user, password, endpoint)
 	}
-
-	split := strings.Split(string(decoded), ":")
-	password := split[1]
-	user := split[0]
-
-	//"docker login -u AWS -p xxx -e none https://142221083342.dkr.ecr.us-east-1.amazonaws.com"
-	fmt.Printf("docker login -u %s -p %s %s\n", user, password, endpoint)
 }
