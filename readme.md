@@ -1,5 +1,7 @@
 a drop in replacement for the awscli
 
+useful for environments where you don't have python installed for the awscli
+
 #### currently supports
 
 ```bash
