@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -99,7 +100,7 @@ func s3Copy(srcPath, dstPath string) {
 		out, err := svc.GetObjectRequest(&s3.GetObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(key),
-		}).Send()
+		}).Send(context.Background())
 		if err != nil {
 			panic(err)
 		}
@@ -132,7 +133,7 @@ func s3Copy(srcPath, dstPath string) {
 			Bucket: aws.String(bucket),
 			Key:    aws.String(key),
 			Body:   reader,
-		}).Send()
+		}).Send(context.Background())
 		if err != nil {
 			panic(err)
 		}
@@ -195,7 +196,7 @@ func getEcrLogin(region string, registry []string) {
 	client := ecr.New(cfg)
 	out, err := client.GetAuthorizationTokenRequest(&ecr.GetAuthorizationTokenInput{
 		RegistryIds: registry,
-	}).Send()
+	}).Send(context.Background())
 	if err != nil {
 		panic(err)
 	}
